@@ -762,19 +762,54 @@ function onWrite(iso,val){
 }
 
 /* photo — each slot has its own native <input> inside a <label>, which iOS
-   Safari opens reliably (no JS-triggered hidden-input click). */
-function readImage(file, cb){ const rd=new FileReader(); rd.onload=()=>cb(rd.result); rd.readAsDataURL(file); }
+   Safari opens reliably. Photos are downscaled + JPEG-compressed before saving
+   so a multi-MB phone photo fits inside the browser's localStorage quota. */
+function compressImage(file, cb){
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    const MAX = 1100;                          // longest edge
+    let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const scale = Math.min(1, MAX / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w*scale)), ch = Math.max(1, Math.round(h*scale));
+    const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+    cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
+    URL.revokeObjectURL(url);
+    let out = null; try { out = cv.toDataURL('image/jpeg', 0.72); } catch(e){}
+    cb(out);
+  };
+  img.onerror = () => {                          // fallback: use the file as-is
+    URL.revokeObjectURL(url);
+    const rd = new FileReader(); rd.onload = () => cb(rd.result); rd.onerror = () => cb(null);
+    rd.readAsDataURL(file);
+  };
+  img.src = url;
+}
+function saveGuarded(revert){
+  try { save(); return true; }
+  catch(e){ if(revert) revert(); alert('That photo is too large to save — please try a smaller one.'); return false; }
+}
 function onEntryPhotoPick(iso, input){
   const f=input.files&&input.files[0]; if(!f) return;
-  readImage(f, url=>{
+  compressImage(f, url=>{
+    if(!url){ alert("Sorry, that image couldn't be read."); return; }
     if(!cur.entries) cur.entries={};
     if(!cur.entries[iso]) cur.entries[iso]={text:'',photo:''};
-    cur.entries[iso].photo = url; save(); renderPage();
+    const prev = cur.entries[iso].photo;
+    cur.entries[iso].photo = url;
+    if(saveGuarded(()=>{ cur.entries[iso].photo = prev; })) renderPage();
   });
+  input.value='';
 }
 function onGoalPhotoPick(i, input){
   const f=input.files&&input.files[0]; if(!f) return;
-  readImage(f, url=>{ store.top100[i].photo = url; save(); renderGoalPage(); });
+  compressImage(f, url=>{
+    if(!url){ alert("Sorry, that image couldn't be read."); return; }
+    const prev = store.top100[i].photo;
+    store.top100[i].photo = url;
+    if(saveGuarded(()=>{ store.top100[i].photo = prev; })) renderGoalPage();
+  });
+  input.value='';
 }
 
 /* ── page flip animation ── */
