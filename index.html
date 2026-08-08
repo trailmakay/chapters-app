@@ -517,12 +517,13 @@ function renderShelf(){
   store.journals.forEach((j,i)=>{
     const L = LEATHERS.find(l=>l.name===j.color)||LEATHERS[0];
     const bg = `linear-gradient(160deg, ${L.a}, ${L.b})`;
+    const titleFont = (FONTS.find(f=>f.id===j.font)||FONTS[0]).css;
     const count = Object.values(j.entries||{}).filter(e=>e&&e.text&&e.text.trim()).length;
     books.push(`<div class="book" style="background:${bg}" onclick="openJournal('${j.id}')">
         <div class="book-frame"></div>
         <div class="book-ribbon"></div>
         <div class="book-emboss">❧</div>
-        <div class="book-title">${escapeHtml(j.name)}</div>
+        <div class="book-title" style="font-family:${titleFont}">${escapeHtml(j.name)}</div>
         <div class="book-foot">${count?count+' entr'+(count===1?'y':'ies'):'Empty'}</div>
       </div>`);
   });
