@@ -289,19 +289,31 @@
   /* big photo once added — sits at the bottom of the page; writing scrolls above it */
   .page-photo{
     display:block; position:relative; flex:none;
-    margin:8px 16px 0 16px; cursor:pointer;
+    margin:8px 16px 0 16px;
     border:5px solid #fff; border-radius:4px; overflow:hidden;
     box-shadow:0 6px 14px rgba(60,40,20,.3);
     background:#fff;
   }
-  .page-photo img{ display:block; width:100%; height:22vh; max-height:170px; min-height:110px; object-fit:cover; }
-  .photo-x{
-    position:absolute; top:8px; right:8px; width:28px; height:28px;
+  .page-photo img{
+    display:block; width:100%; height:22vh; max-height:170px; min-height:110px;
+    object-fit:cover; object-position:50% 50%;
+    touch-action:none; cursor:grab; user-select:none; -webkit-user-drag:none;
+  }
+  .page-photo img:active{ cursor:grabbing; }
+  .photo-btn{
+    position:absolute; top:8px; width:30px; height:30px;
     background:rgba(0,0,0,.55); color:#fff; border-radius:50%;
     display:flex; align-items:center; justify-content:center;
-    font-size:20px; line-height:1;
+    font-size:18px; line-height:1; cursor:pointer;
   }
-  .photo-x:active{ background:rgba(0,0,0,.75); }
+  .photo-btn:active{ background:rgba(0,0,0,.78); }
+  .photo-x{ right:8px; font-size:20px; }
+  .photo-replace{ left:8px; }
+  .photo-hint{
+    position:absolute; left:50%; bottom:8px; transform:translateX(-50%);
+    background:rgba(0,0,0,.5); color:#fff; font-size:11px; letter-spacing:.3px;
+    padding:4px 10px; border-radius:20px; pointer-events:none; white-space:nowrap;
+  }
 
   /* turning leaf */
   .leaf{
@@ -751,8 +763,9 @@ function openJournal(id){
 function pageHTML(iso, pageNo){
   const e = (cur.entries&&cur.entries[iso])||{};
   const fontCss = (FONTS.find(f=>f.id===cur.font)||FONTS[0]).css;
+  const ep = e.photoPos||{x:50,y:50};
   const bigPhoto = e.photo
-    ? `<label class="page-photo"><input type="file" accept="image/*" hidden onchange="onEntryPhotoPick('${iso}',this)"><img src="${e.photo}"><span class="photo-x" onclick="event.preventDefault();event.stopPropagation();removeEntryPhoto('${iso}')">×</span></label>`
+    ? `<div class="page-photo"><img src="${e.photo}" style="object-position:${ep.x}% ${ep.y}%" onpointerdown="panStart(event,'entry','${iso}')"><label class="photo-btn photo-replace"><input type="file" accept="image/*" hidden onchange="onEntryPhotoPick('${iso}',this)">⟳</label><span class="photo-btn photo-x" onclick="removeEntryPhoto('${iso}')">×</span><span class="photo-hint">drag to reposition</span></div>`
     : '';
   const addBtn = e.photo ? '' : `<label class="photo-slot">+<input type="file" accept="image/*" hidden onchange="onEntryPhotoPick('${iso}',this)"></label>`;
   return `
@@ -820,7 +833,7 @@ function onEntryPhotoPick(iso, input){
     if(!url){ alert("Sorry, that image couldn't be read."); return; }
     if(!cur.entries) cur.entries={};
     if(!cur.entries[iso]) cur.entries[iso]={text:'',photo:''};
-    cur.entries[iso].photo = url; save(); renderPage();
+    cur.entries[iso].photo = url; cur.entries[iso].photoPos={x:50,y:50}; save(); renderPage();
   });
   input.value='';
 }
@@ -828,9 +841,42 @@ function onGoalPhotoPick(i, input){
   const f=input.files&&input.files[0]; if(!f) return;
   compressImage(f, url=>{
     if(!url){ alert("Sorry, that image couldn't be read."); return; }
-    store.top100[i].photo = url; save(); renderGoalPage();
+    store.top100[i].photo = url; store.top100[i].photoPos={x:50,y:50}; save(); renderGoalPage();
   });
   input.value='';
+}
+
+/* ── drag the photo to choose which part shows (pans object-position) ── */
+function photoObj(kind, key){ return kind==='goal' ? store.top100[key] : (cur.entries&&cur.entries[key]); }
+function photoPos(kind, key){ const o=photoObj(kind,key); const p=o&&o.photoPos; return { x:(p&&p.x!=null)?p.x:50, y:(p&&p.y!=null)?p.y:50 }; }
+let _pan=null;
+function panStart(ev, kind, key){
+  const img = ev.currentTarget;
+  const box = img.getBoundingClientRect();
+  const pt = ev.touches ? ev.touches[0] : ev;
+  const pos = photoPos(kind, key);
+  _pan = { img, kind, key, x0:pt.clientX, y0:pt.clientY, px:pos.x, py:pos.y, w:box.width, h:box.height, moved:false };
+  window.addEventListener('pointermove', panMove, {passive:false});
+  window.addEventListener('pointerup', panEnd);
+}
+function panMove(ev){
+  if(!_pan) return;
+  ev.preventDefault();
+  const dx = ev.clientX - _pan.x0, dy = ev.clientY - _pan.y0;
+  if(Math.abs(dx)+Math.abs(dy) > 3) _pan.moved = true;
+  const nx = Math.max(0, Math.min(100, _pan.px - (dx/_pan.w)*100));
+  const ny = Math.max(0, Math.min(100, _pan.py - (dy/_pan.h)*100));
+  _pan.img.style.objectPosition = nx+'% '+ny+'%';
+  _pan._nx = nx; _pan._ny = ny;
+}
+function panEnd(){
+  window.removeEventListener('pointermove', panMove);
+  window.removeEventListener('pointerup', panEnd);
+  if(_pan && _pan.moved){
+    const o = photoObj(_pan.kind, _pan.key);
+    if(o){ o.photoPos = { x: _pan._nx, y: _pan._ny }; save(); }
+  }
+  _pan = null;
 }
 
 /* ── page flip animation ── */
@@ -974,8 +1020,9 @@ function openGoal(i){
 function goalPageHTML(i){
   const g = store.top100[i];
   const date = g.date || todayISO();
+  const gp = g.photoPos||{x:50,y:50};
   const bigPhoto = g.photo
-    ? `<label class="page-photo"><input type="file" accept="image/*" hidden onchange="onGoalPhotoPick(${i},this)"><img src="${g.photo}"><span class="photo-x" onclick="event.preventDefault();event.stopPropagation();removeGoalPhoto(${i})">×</span></label>`
+    ? `<div class="page-photo"><img src="${g.photo}" style="object-position:${gp.x}% ${gp.y}%" onpointerdown="panStart(event,'goal',${i})"><label class="photo-btn photo-replace"><input type="file" accept="image/*" hidden onchange="onGoalPhotoPick(${i},this)">⟳</label><span class="photo-btn photo-x" onclick="removeGoalPhoto(${i})">×</span><span class="photo-hint">drag to reposition</span></div>`
     : '';
   const addBtn = g.photo ? '' : `<label class="photo-slot">+<input type="file" accept="image/*" hidden onchange="onGoalPhotoPick(${i},this)"></label>`;
   return `
