@@ -366,9 +366,17 @@
     width:100%; padding:13px 14px; border-radius:10px; font-size:16px;
     background:#241408; color:#f4ecd8; border:1px solid rgba(217,180,91,.3); outline:none;
   }
-  .swatches{ display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
+  .swatches{ display:flex; gap:10px; flex-wrap:wrap; }
   .swatch{ width:34px; height:34px; border-radius:8px; border:2px solid transparent; }
   .swatch.sel{ border-color:var(--gold); transform:scale(1.08); }
+  .pick-label{ font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#c9b48f; opacity:.85; margin:16px 2px 8px; }
+  .fontpick{ display:flex; flex-wrap:wrap; gap:8px; }
+  .fontchip{
+    padding:8px 13px; border-radius:9px; font-size:17px;
+    background:#241408; color:#f0e2be;
+    border:1.5px solid rgba(217,180,91,.28);
+  }
+  .fontchip.sel{ border-color:var(--gold); background:rgba(217,180,91,.14); }
   .modal-actions{ display:flex; gap:10px; padding:16px 18px calc(18px + env(safe-area-inset-bottom)); }
   .btn{
     flex:1; padding:13px; border-radius:11px; font-size:15px; font-weight:600;
@@ -433,10 +441,13 @@
 <div class="modal-wrap" id="modal">
   <div class="modal">
     <h3>New Journal</h3>
-    <p>Name it and choose a leather.</p>
+    <p>Name it, then pick a leather and a font.</p>
     <div class="modal-body">
       <input id="jName" placeholder="e.g. Travels, 2026, Gratitude…" maxlength="40">
+      <div class="pick-label">Leather</div>
       <div class="swatches" id="swatches"></div>
+      <div class="pick-label">Font</div>
+      <div class="fontpick" id="fontpick"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
@@ -535,21 +546,27 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'
 
 /* ══════════════════════ MODAL ══════════════════════ */
 let pickedColor = LEATHERS[0].name;
+let pickedFont = 'serif';
 function openModal(){
   document.getElementById('jName').value='';
   pickedColor = LEATHERS[Math.floor(Math.random()*LEATHERS.length)].name;
+  pickedFont = 'serif';
   document.getElementById('swatches').innerHTML = LEATHERS.map(l=>
     `<div class="swatch ${l.name===pickedColor?'sel':''}" data-c="${l.name}"
        style="background:linear-gradient(160deg,${l.a},${l.b})" onclick="pickColor('${l.name}')"></div>`).join('');
+  document.getElementById('fontpick').innerHTML = FONTS.map(f=>
+    `<div class="fontchip ${f.id===pickedFont?'sel':''}" data-f="${f.id}"
+       style="font-family:${f.css}" onclick="pickFont('${f.id}')">${f.label}</div>`).join('');
   document.getElementById('modal').classList.add('open');
   setTimeout(()=>document.getElementById('jName').focus(),120);
 }
 function pickColor(c){ pickedColor=c; document.querySelectorAll('.swatch').forEach(s=>s.classList.toggle('sel',s.dataset.c===c)); }
+function pickFont(id){ pickedFont=id; document.querySelectorAll('.fontchip').forEach(c=>c.classList.toggle('sel',c.dataset.f===id)); }
 function closeModal(){ document.getElementById('modal').classList.remove('open'); }
 function createJournal(){
   let name = document.getElementById('jName').value.trim();
   if(!name) name = 'Journal '+(store.journals.length+1);
-  const j = { id:'j'+Date.now(), name, color:pickedColor, font:'serif', created:todayISO(), entries:{} };
+  const j = { id:'j'+Date.now(), name, color:pickedColor, font:pickedFont, created:todayISO(), entries:{} };
   store.journals.push(j); save(); closeModal(); renderShelf();
   openJournal(j.id);
 }
