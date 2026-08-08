@@ -239,9 +239,9 @@
     color: var(--ink);
     backface-visibility:hidden;
     -webkit-backface-visibility:hidden;
-    overflow:hidden;
+    overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch;
   }
-  /* faint left margin rule */
+  /* faint left margin rule (spans the whole scrollable page) */
   .page::before{
     content:""; position:absolute; top:0; bottom:0; left:34px; width:1px;
     background: rgba(180,70,60,.28);
@@ -256,10 +256,11 @@
   .page-weekday{ font-size:11px; color:#a9895a; }
 
   .page-body{
-    flex:1; min-height:0; margin-left:16px;
+    flex:0 0 auto; margin-left:16px;
     font-size:19px; line-height:34px; color:var(--ink);
     border:none; outline:none; resize:none;
-    width:100%; overflow-y:auto;
+    width:100%; overflow:hidden;          /* grows to fit text; the whole page scrolls */
+    min-height:42vh; height:auto;
     font-family: Georgia, serif;
     padding:0;
     /* ruled lines live in the writing area, aligned to the text so you write ON the line */
@@ -763,7 +764,7 @@ function pageHTML(iso, pageNo){
       <div class="page-date">${prettyDate(iso)}</div>
     </div>
     <textarea class="page-body" placeholder="" style="font-family:${fontCss}"
-      oninput="onWrite('${iso}',this.value)">${escapeHtml(e.text||'')}</textarea>
+      oninput="onWrite('${iso}',this.value);autoGrow(this)">${escapeHtml(e.text||'')}</textarea>
     ${bigPhoto}
     <div class="page-foot">
       <span class="page-num">— ${pageNo} —</span>
@@ -772,10 +773,14 @@ function pageHTML(iso, pageNo){
 }
 function removeEntryPhoto(iso){ if(cur.entries&&cur.entries[iso]) cur.entries[iso].photo=''; save(); renderPage(); }
 
+/* grow a textarea to fit its text so the whole page scrolls and nothing overlaps the photo */
+function autoGrow(ta){ if(!ta) return; ta.style.height='auto'; ta.style.height = ta.scrollHeight + 'px'; }
+
 function renderPage(){
   const iso = pageList[idx];
   const stack = document.getElementById('pageStack');
   stack.innerHTML = `<div class="page" id="curPage">${pageHTML(iso, idx+1)}</div>`;
+  const ta = stack.querySelector('.page-body'); autoGrow(ta); requestAnimationFrame(()=>autoGrow(ta));
 }
 
 function onWrite(iso,val){
@@ -963,8 +968,8 @@ function openGoal(i){
   const g = store.top100[i];
   if(!g.date) g.date = todayISO();
   save();
+  showView('goalView');   // make the page visible first so the textarea can size to its text
   renderGoalPage();
-  showView('goalView');
 }
 function goalPageHTML(i){
   const g = store.top100[i];
@@ -984,7 +989,7 @@ function goalPageHTML(i){
     <input class="goal-title-input" placeholder="Goal #${i+1}" value="${escapeHtml(g.text||'')}"
       oninput="editGoal(${i},this.value)">
     <textarea class="page-body" placeholder="How I did it…"
-      oninput="editReflect(${i},this.value)">${escapeHtml(g.reflection||'')}</textarea>
+      oninput="editReflect(${i},this.value);autoGrow(this)">${escapeHtml(g.reflection||'')}</textarea>
     ${bigPhoto}
     <div class="page-foot">
       <span class="page-num">✦</span>
@@ -993,7 +998,9 @@ function goalPageHTML(i){
 }
 function removeGoalPhoto(i){ store.top100[i].photo=''; save(); renderGoalPage(); }
 function renderGoalPage(){
-  document.getElementById('goalStack').innerHTML = `<div class="page">${goalPageHTML(curGoal)}</div>`;
+  const stack = document.getElementById('goalStack');
+  stack.innerHTML = `<div class="page">${goalPageHTML(curGoal)}</div>`;
+  const ta = stack.querySelector('.page-body'); autoGrow(ta); requestAnimationFrame(()=>autoGrow(ta));
 }
 function editGoalDate(i,val){
   if(!val) return;
