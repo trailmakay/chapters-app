@@ -256,7 +256,7 @@
   .page-weekday{ font-size:11px; color:#a9895a; }
 
   .page-body{
-    flex:1; margin-left:16px;
+    flex:1; min-height:0; margin-left:16px;
     font-size:19px; line-height:34px; color:var(--ink);
     border:none; outline:none; resize:none;
     width:100%; overflow-y:auto;
@@ -285,14 +285,15 @@
   }
   .photo-slot.has-photo{ border-style:solid; width:46px; height:46px; }
   .photo-slot img{ width:100%; height:100%; object-fit:cover; }
-  /* big photo once added — a photo "taped" into the page */
+  /* big photo once added — sits at the bottom of the page; writing scrolls above it */
   .page-photo{
-    position:relative; margin:10px 0 4px 16px;
+    display:block; position:relative; flex:none;
+    margin:8px 16px 0 16px; cursor:pointer;
     border:5px solid #fff; border-radius:4px; overflow:hidden;
-    box-shadow:0 8px 18px rgba(60,40,20,.35); transform:rotate(-1deg);
-    background:#fff; flex:none;
+    box-shadow:0 6px 14px rgba(60,40,20,.3);
+    background:#fff;
   }
-  .page-photo img{ display:block; width:100%; height:200px; object-fit:cover; }
+  .page-photo img{ display:block; width:100%; height:22vh; max-height:170px; min-height:110px; object-fit:cover; }
   .photo-x{
     position:absolute; top:8px; right:8px; width:28px; height:28px;
     background:rgba(0,0,0,.55); color:#fff; border-radius:50%;
@@ -522,10 +523,6 @@
   </div>
 </div>
 
-<!-- off-screen (not display:none) so iOS Safari reliably opens the photo picker -->
-<input type="file" id="photoInput" accept="image/*"
-  style="position:fixed; left:-10000px; top:0; width:1px; height:1px; opacity:0; pointer-events:none;">
-
 <script>
 /* ══════════════════════ DATA ══════════════════════ */
 const KEY = 'leatherbound_v1';
@@ -730,9 +727,9 @@ function pageHTML(iso, pageNo){
   const e = (cur.entries&&cur.entries[iso])||{};
   const fontCss = (FONTS.find(f=>f.id===cur.font)||FONTS[0]).css;
   const bigPhoto = e.photo
-    ? `<div class="page-photo" onclick="pickPhoto('${iso}')"><img src="${e.photo}"><span class="photo-x" onclick="event.stopPropagation();removeEntryPhoto('${iso}')">×</span></div>`
+    ? `<label class="page-photo"><input type="file" accept="image/*" hidden onchange="onEntryPhotoPick('${iso}',this)"><img src="${e.photo}"><span class="photo-x" onclick="event.preventDefault();event.stopPropagation();removeEntryPhoto('${iso}')">×</span></label>`
     : '';
-  const addBtn = e.photo ? '' : `<div class="photo-slot" onclick="pickPhoto('${iso}')">+</div>`;
+  const addBtn = e.photo ? '' : `<label class="photo-slot">+<input type="file" accept="image/*" hidden onchange="onEntryPhotoPick('${iso}',this)"></label>`;
   return `
     <div class="page-head">
       <div>
@@ -764,24 +761,21 @@ function onWrite(iso,val){
   save();
 }
 
-/* photo — shared by journal pages and goal pages */
-let photoTarget=null;   // {kind:'entry', iso}  or  {kind:'goal', i}
-function pickPhoto(iso){ photoTarget={kind:'entry', iso}; document.getElementById('photoInput').click(); }
-document.getElementById('photoInput').addEventListener('change', e=>{
-  const f=e.target.files[0]; if(!f||!photoTarget) return;
-  const rd=new FileReader();
-  rd.onload=()=>{
-    if(photoTarget.kind==='entry'){
-      const iso=photoTarget.iso;
-      if(!cur.entries[iso]) cur.entries[iso]={text:'',photo:''};
-      cur.entries[iso].photo = rd.result; save(); renderPage();
-    } else if(photoTarget.kind==='goal'){
-      store.top100[photoTarget.i].photo = rd.result; save(); renderGoalPage();
-    }
-  };
-  rd.readAsDataURL(f);
-  e.target.value='';
-});
+/* photo — each slot has its own native <input> inside a <label>, which iOS
+   Safari opens reliably (no JS-triggered hidden-input click). */
+function readImage(file, cb){ const rd=new FileReader(); rd.onload=()=>cb(rd.result); rd.readAsDataURL(file); }
+function onEntryPhotoPick(iso, input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  readImage(f, url=>{
+    if(!cur.entries) cur.entries={};
+    if(!cur.entries[iso]) cur.entries[iso]={text:'',photo:''};
+    cur.entries[iso].photo = url; save(); renderPage();
+  });
+}
+function onGoalPhotoPick(i, input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  readImage(f, url=>{ store.top100[i].photo = url; save(); renderGoalPage(); });
+}
 
 /* ── page flip animation ── */
 function flip(dir){ // dir: +1 next (forward), -1 prev
@@ -925,9 +919,9 @@ function goalPageHTML(i){
   const g = store.top100[i];
   const date = g.date || todayISO();
   const bigPhoto = g.photo
-    ? `<div class="page-photo" onclick="pickGoalPhoto(${i})"><img src="${g.photo}"><span class="photo-x" onclick="event.stopPropagation();removeGoalPhoto(${i})">×</span></div>`
+    ? `<label class="page-photo"><input type="file" accept="image/*" hidden onchange="onGoalPhotoPick(${i},this)"><img src="${g.photo}"><span class="photo-x" onclick="event.preventDefault();event.stopPropagation();removeGoalPhoto(${i})">×</span></label>`
     : '';
-  const addBtn = g.photo ? '' : `<div class="photo-slot" onclick="pickGoalPhoto(${i})">+</div>`;
+  const addBtn = g.photo ? '' : `<label class="photo-slot">+<input type="file" accept="image/*" hidden onchange="onGoalPhotoPick(${i},this)"></label>`;
   return `
     <div class="page-head">
       <div>
@@ -955,7 +949,6 @@ function editGoalDate(i,val){
   store.top100[i].date = val; save();
   const wd = document.getElementById('goalWeekday'); if(wd) wd.textContent = weekday(val);
 }
-function pickGoalPhoto(i){ photoTarget = {kind:'goal', i}; document.getElementById('photoInput').click(); }
 function closeGoal(){ save(); renderTop100(); showView('top100View'); }
 
 /* ══════════════════════ NAV ══════════════════════ */
