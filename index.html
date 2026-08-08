@@ -297,22 +297,27 @@
   .page-photo img{
     display:block; width:100%; height:22vh; max-height:170px; min-height:110px;
     object-fit:cover; object-position:50% 50%; transform-origin:center center;
-    touch-action:none; cursor:grab; user-select:none; -webkit-user-drag:none;
+    touch-action:pan-y; user-select:none; -webkit-user-drag:none;   /* view: page can scroll */
   }
-  .page-photo img:active{ cursor:grabbing; }
+  .page-photo.editing img{ touch-action:none; cursor:grab; }         /* edit: capture drag/pinch */
+  .page-photo.editing img:active{ cursor:grabbing; }
   .photo-btn{
     position:absolute; top:8px; width:30px; height:30px;
     background:rgba(0,0,0,.55); color:#fff; border-radius:50%;
     display:flex; align-items:center; justify-content:center;
-    font-size:18px; line-height:1; cursor:pointer;
+    font-size:18px; line-height:1; cursor:pointer; z-index:2;
   }
-  .photo-btn:active{ background:rgba(0,0,0,.78); }
-  .photo-x{ right:8px; font-size:20px; }
+  .photo-btn:active{ background:rgba(0,0,0,.82); }
   .photo-replace{ left:8px; }
+  .photo-x{ right:46px; font-size:20px; }                            /* edit mode: left of the ✓ */
+  .photo-done{ right:8px; background:rgba(43,138,80,.95); font-size:17px; }
+  .photo-done:active{ background:rgba(43,138,80,1); }
+  /* view mode: a single small edit button */
+  .photo-edit{ top:auto; bottom:8px; right:8px; width:32px; height:32px; background:rgba(0,0,0,.5); font-size:15px; }
   .photo-hint{
     position:absolute; left:50%; bottom:8px; transform:translateX(-50%);
     background:rgba(0,0,0,.5); color:#fff; font-size:11px; letter-spacing:.3px;
-    padding:4px 10px; border-radius:20px; pointer-events:none; white-space:nowrap;
+    padding:4px 10px; border-radius:20px; pointer-events:none; white-space:nowrap; z-index:1;
   }
 
   /* turning leaf */
@@ -748,6 +753,7 @@ function buildPages(j){
 function openJournal(id){
   cur = store.journals.find(j=>j.id===id);
   if(!cur) return;
+  photoEditing=false;
   if(!cur.font) cur.font='serif';
   pageList = buildPages(cur);
   idx = pageList.indexOf(todayISO());
@@ -764,8 +770,11 @@ function pageHTML(iso, pageNo){
   const e = (cur.entries&&cur.entries[iso])||{};
   const fontCss = (FONTS.find(f=>f.id===cur.font)||FONTS[0]).css;
   const ep = e.photoPos||{x:50,y:50}, ez = e.photoZoom||1;
+  const eControls = photoEditing
+    ? `<label class="photo-btn photo-replace"><input type="file" accept="image/*" hidden onchange="onEntryPhotoPick('${iso}',this)">⟳</label><span class="photo-btn photo-x" onclick="removeEntryPhoto('${iso}')">×</span><span class="photo-btn photo-done" onclick="endPhotoEdit()">✓</span><span class="photo-hint">drag to move · pinch to zoom</span>`
+    : `<span class="photo-btn photo-edit" onclick="startPhotoEdit()">✎</span>`;
   const bigPhoto = e.photo
-    ? `<div class="page-photo"><img src="${e.photo}" style="object-position:${ep.x}% ${ep.y}%;transform:scale(${ez})" onpointerdown="panStart(event,'entry','${iso}')"><label class="photo-btn photo-replace"><input type="file" accept="image/*" hidden onchange="onEntryPhotoPick('${iso}',this)">⟳</label><span class="photo-btn photo-x" onclick="removeEntryPhoto('${iso}')">×</span><span class="photo-hint">drag to move · pinch to zoom</span></div>`
+    ? `<div class="page-photo${photoEditing?' editing':''}"><img src="${e.photo}" style="object-position:${ep.x}% ${ep.y}%;transform:scale(${ez})" onpointerdown="panStart(event,'entry','${iso}')">${eControls}</div>`
     : '';
   const addBtn = e.photo ? '' : `<label class="photo-slot">+<input type="file" accept="image/*" hidden onchange="onEntryPhotoPick('${iso}',this)"></label>`;
   return `
@@ -853,7 +862,15 @@ function photoZoom(kind, key){ const o=photoObj(kind,key); return (o&&o.photoZoo
 function applyPhoto(img,x,y,z){ img.style.objectPosition=x+'% '+y+'%'; img.style.transform='scale('+z+')'; }
 function ptDist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
 let _ph=null;
+let photoEditing=false;
+function rerenderCurrentPage(){
+  if(document.getElementById('goalView').classList.contains('active')) renderGoalPage();
+  else if(document.getElementById('readerView').classList.contains('active')) renderPage();
+}
+function startPhotoEdit(){ photoEditing=true; rerenderCurrentPage(); }
+function endPhotoEdit(){ photoEditing=false; rerenderCurrentPage(); }
 function panStart(ev, kind, key){
+  if(!photoEditing) return;          // only pan/zoom while editing
   const img = ev.currentTarget;
   if(!_ph || _ph.img!==img){
     const pos=photoPos(kind,key);
@@ -1034,6 +1051,7 @@ let curGoal = null;
 function shortDate(iso){ const d=parseISO(iso); return MO[d.getMonth()].slice(0,3)+' '+d.getDate(); }
 function openGoal(i){
   curGoal = i;
+  photoEditing=false;
   const g = store.top100[i];
   if(!g.date) g.date = todayISO();
   save();
@@ -1044,8 +1062,11 @@ function goalPageHTML(i){
   const g = store.top100[i];
   const date = g.date || todayISO();
   const gp = g.photoPos||{x:50,y:50}, gz = g.photoZoom||1;
+  const gControls = photoEditing
+    ? `<label class="photo-btn photo-replace"><input type="file" accept="image/*" hidden onchange="onGoalPhotoPick(${i},this)">⟳</label><span class="photo-btn photo-x" onclick="removeGoalPhoto(${i})">×</span><span class="photo-btn photo-done" onclick="endPhotoEdit()">✓</span><span class="photo-hint">drag to move · pinch to zoom</span>`
+    : `<span class="photo-btn photo-edit" onclick="startPhotoEdit()">✎</span>`;
   const bigPhoto = g.photo
-    ? `<div class="page-photo"><img src="${g.photo}" style="object-position:${gp.x}% ${gp.y}%;transform:scale(${gz})" onpointerdown="panStart(event,'goal',${i})"><label class="photo-btn photo-replace"><input type="file" accept="image/*" hidden onchange="onGoalPhotoPick(${i},this)">⟳</label><span class="photo-btn photo-x" onclick="removeGoalPhoto(${i})">×</span><span class="photo-hint">drag to move · pinch to zoom</span></div>`
+    ? `<div class="page-photo${photoEditing?' editing':''}"><img src="${g.photo}" style="object-position:${gp.x}% ${gp.y}%;transform:scale(${gz})" onpointerdown="panStart(event,'goal',${i})">${gControls}</div>`
     : '';
   const addBtn = g.photo ? '' : `<label class="photo-slot">+<input type="file" accept="image/*" hidden onchange="onGoalPhotoPick(${i},this)"></label>`;
   return `
