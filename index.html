@@ -365,25 +365,21 @@
   }
   .reflect-label{ color:#8bb298; font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:5px; }
 
-  /* tappable "how I did it" opener on a completed goal */
-  .goal-open{
-    display:flex; align-items:center; gap:8px; width:100%;
-    margin-top:8px; padding:9px 11px; border-radius:9px;
-    background:rgba(217,180,91,.12); border:1px solid rgba(217,180,91,.3);
-    color:#e7d5a8; font-size:13px; text-align:left;
-  }
-  .goal-open:active{ background:rgba(217,180,91,.2); }
-  .goal-open .go-snip{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#bcd4c2; }
-  .goal-open .go-chev{ font-size:18px; color:var(--gold); }
+  /* completed goal row — tap the goal/chevron to open its page */
+  .goal-open-area{ cursor:pointer; }
+  .goal-text-done{ color:var(--gold); font-size:16px; padding:6px 0; line-height:1.4; word-break:break-word; }
+  .goal .go-chev{ align-self:center; font-size:22px; color:var(--gold); opacity:.65; padding-left:4px; flex:none; }
 
   /* goal page (styled like a journal page) */
   #goalView{ position:fixed; inset:0; background:#1a0f06; display:none; }
   #goalView.active{ display:block; }
-  .goal-page-title{
-    margin-left:16px; margin-bottom:8px;
+  .goal-title-input{
+    margin-left:16px; margin-bottom:8px; width:calc(100% - 16px);
     font-family:Georgia,serif; font-size:22px; font-weight:700;
     color:#5e4526; line-height:1.2; letter-spacing:.2px;
+    background:transparent; border:none; outline:none; padding:0;
   }
+  .goal-title-input::placeholder{ color:#b7a377; }
   .goal-date-input{
     font-family:Georgia,serif; font-size:13px; color:#8a6a3b;
     background:transparent; border:none; text-align:right; padding:2px 0;
@@ -861,19 +857,21 @@ function renderTop100(){
   let done=0;
   list.innerHTML = store.top100.map((g,i)=>{
     if(g.done) done++;
-    const snip = (g.reflection||'').trim();
-    const opener = g.done ? `
-        <button class="goal-open" onclick="openGoal(${i})">
-          <span>📖</span>
-          <span class="go-snip">${snip ? escapeHtml(snip) : 'Write how you did it'}${g.date ? ' · '+shortDate(g.date) : ''}</span>
-          <span class="go-chev">›</span>
-        </button>` : '';
-    return `<div class="goal ${g.done?'done':''}">
+    if(g.done){
+      // completed → just the check + goal; tap the row to open its page and read what you wrote
+      return `<div class="goal done">
+        <div class="goal-no">${i+1}</div>
+        <div class="goal-check" onclick="toggleGoal(${i})">✓</div>
+        <div class="goal-main goal-open-area" onclick="openGoal(${i})"><div class="goal-text-done">${escapeHtml(g.text||('Goal #'+(i+1)))}</div></div>
+        <div class="go-chev" onclick="openGoal(${i})">›</div>
+      </div>`;
+    }
+    return `<div class="goal">
       <div class="goal-no">${i+1}</div>
-      <div class="goal-check" onclick="toggleGoal(${i})">${g.done?'✓':''}</div>
+      <div class="goal-check" onclick="toggleGoal(${i})"></div>
       <div class="goal-main">
         <input class="goal-input" placeholder="Goal #${i+1}…" value="${escapeHtml(g.text)}"
-          oninput="editGoal(${i},this.value)">${opener}
+          oninput="editGoal(${i},this.value)">
       </div>
     </div>`;
   }).join('');
@@ -917,7 +915,8 @@ function goalPageHTML(i){
       </div>
       <input type="date" class="goal-date-input" value="${date}" onchange="editGoalDate(${i},this.value)">
     </div>
-    <div class="goal-page-title">${escapeHtml(g.text||('Goal #'+(i+1)))}</div>
+    <input class="goal-title-input" placeholder="Goal #${i+1}" value="${escapeHtml(g.text||'')}"
+      oninput="editGoal(${i},this.value)">
     <textarea class="page-body" placeholder="How I did it…"
       oninput="editReflect(${i},this.value)">${escapeHtml(g.reflection||'')}</textarea>
     <div class="page-foot">
