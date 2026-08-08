@@ -296,7 +296,7 @@
   }
   .page-photo img{
     display:block; width:100%; height:22vh; max-height:170px; min-height:110px;
-    object-fit:cover; object-position:50% 50%;
+    object-fit:cover; object-position:50% 50%; transform-origin:center center;
     touch-action:none; cursor:grab; user-select:none; -webkit-user-drag:none;
   }
   .page-photo img:active{ cursor:grabbing; }
@@ -763,9 +763,9 @@ function openJournal(id){
 function pageHTML(iso, pageNo){
   const e = (cur.entries&&cur.entries[iso])||{};
   const fontCss = (FONTS.find(f=>f.id===cur.font)||FONTS[0]).css;
-  const ep = e.photoPos||{x:50,y:50};
+  const ep = e.photoPos||{x:50,y:50}, ez = e.photoZoom||1;
   const bigPhoto = e.photo
-    ? `<div class="page-photo"><img src="${e.photo}" style="object-position:${ep.x}% ${ep.y}%" onpointerdown="panStart(event,'entry','${iso}')"><label class="photo-btn photo-replace"><input type="file" accept="image/*" hidden onchange="onEntryPhotoPick('${iso}',this)">⟳</label><span class="photo-btn photo-x" onclick="removeEntryPhoto('${iso}')">×</span><span class="photo-hint">drag to reposition</span></div>`
+    ? `<div class="page-photo"><img src="${e.photo}" style="object-position:${ep.x}% ${ep.y}%;transform:scale(${ez})" onpointerdown="panStart(event,'entry','${iso}')"><label class="photo-btn photo-replace"><input type="file" accept="image/*" hidden onchange="onEntryPhotoPick('${iso}',this)">⟳</label><span class="photo-btn photo-x" onclick="removeEntryPhoto('${iso}')">×</span><span class="photo-hint">drag to move · pinch to zoom</span></div>`
     : '';
   const addBtn = e.photo ? '' : `<label class="photo-slot">+<input type="file" accept="image/*" hidden onchange="onEntryPhotoPick('${iso}',this)"></label>`;
   return `
@@ -833,7 +833,7 @@ function onEntryPhotoPick(iso, input){
     if(!url){ alert("Sorry, that image couldn't be read."); return; }
     if(!cur.entries) cur.entries={};
     if(!cur.entries[iso]) cur.entries[iso]={text:'',photo:''};
-    cur.entries[iso].photo = url; cur.entries[iso].photoPos={x:50,y:50}; save(); renderPage();
+    cur.entries[iso].photo = url; cur.entries[iso].photoPos={x:50,y:50}; cur.entries[iso].photoZoom=1; save(); renderPage();
   });
   input.value='';
 }
@@ -841,42 +841,65 @@ function onGoalPhotoPick(i, input){
   const f=input.files&&input.files[0]; if(!f) return;
   compressImage(f, url=>{
     if(!url){ alert("Sorry, that image couldn't be read."); return; }
-    store.top100[i].photo = url; store.top100[i].photoPos={x:50,y:50}; save(); renderGoalPage();
+    store.top100[i].photo = url; store.top100[i].photoPos={x:50,y:50}; store.top100[i].photoZoom=1; save(); renderGoalPage();
   });
   input.value='';
 }
 
-/* ── drag the photo to choose which part shows (pans object-position) ── */
+/* ── frame the photo: one finger drags (which part shows), two fingers pinch to zoom ── */
 function photoObj(kind, key){ return kind==='goal' ? store.top100[key] : (cur.entries&&cur.entries[key]); }
 function photoPos(kind, key){ const o=photoObj(kind,key); const p=o&&o.photoPos; return { x:(p&&p.x!=null)?p.x:50, y:(p&&p.y!=null)?p.y:50 }; }
-let _pan=null;
+function photoZoom(kind, key){ const o=photoObj(kind,key); return (o&&o.photoZoom)||1; }
+function applyPhoto(img,x,y,z){ img.style.objectPosition=x+'% '+y+'%'; img.style.transform='scale('+z+')'; }
+function ptDist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+let _ph=null;
 function panStart(ev, kind, key){
   const img = ev.currentTarget;
-  const box = img.getBoundingClientRect();
-  const pt = ev.touches ? ev.touches[0] : ev;
-  const pos = photoPos(kind, key);
-  _pan = { img, kind, key, x0:pt.clientX, y0:pt.clientY, px:pos.x, py:pos.y, w:box.width, h:box.height, moved:false };
-  window.addEventListener('pointermove', panMove, {passive:false});
-  window.addEventListener('pointerup', panEnd);
+  if(!_ph || _ph.img!==img){
+    const pos=photoPos(kind,key);
+    _ph = { img, kind, key, pointers:new Map(), px:pos.x, py:pos.y, z:photoZoom(kind,key), moved:false, mode:null };
+    window.addEventListener('pointermove', panMove, {passive:false});
+    window.addEventListener('pointerup', panUp);
+    window.addEventListener('pointercancel', panUp);
+  }
+  _ph.pointers.set(ev.pointerId, {x:ev.clientX, y:ev.clientY});
+  try{ img.setPointerCapture && img.setPointerCapture(ev.pointerId); }catch(e){}
+  if(_ph.pointers.size>=2){ startPinch(); } else { startPan(ev.clientX, ev.clientY); }
+}
+function startPan(cx,cy){
+  const b=_ph.img.getBoundingClientRect();
+  _ph.mode='pan'; _ph.x0=cx; _ph.y0=cy; _ph.w=b.width; _ph.h=b.height; _ph.startPx=_ph.px; _ph.startPy=_ph.py;
+}
+function startPinch(){
+  const pts=[..._ph.pointers.values()];
+  _ph.mode='pinch'; _ph.startDist=ptDist(pts[0],pts[1])||1; _ph.startZoom=_ph.z;
 }
 function panMove(ev){
-  if(!_pan) return;
+  if(!_ph) return;
+  if(_ph.pointers.has(ev.pointerId)) _ph.pointers.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
   ev.preventDefault();
-  const dx = ev.clientX - _pan.x0, dy = ev.clientY - _pan.y0;
-  if(Math.abs(dx)+Math.abs(dy) > 3) _pan.moved = true;
-  const nx = Math.max(0, Math.min(100, _pan.px - (dx/_pan.w)*100));
-  const ny = Math.max(0, Math.min(100, _pan.py - (dy/_pan.h)*100));
-  _pan.img.style.objectPosition = nx+'% '+ny+'%';
-  _pan._nx = nx; _pan._ny = ny;
-}
-function panEnd(){
-  window.removeEventListener('pointermove', panMove);
-  window.removeEventListener('pointerup', panEnd);
-  if(_pan && _pan.moved){
-    const o = photoObj(_pan.kind, _pan.key);
-    if(o){ o.photoPos = { x: _pan._nx, y: _pan._ny }; save(); }
+  const pts=[..._ph.pointers.values()];
+  if(_ph.mode==='pinch' && pts.length>=2){
+    const z=Math.max(1, Math.min(4, _ph.startZoom * (ptDist(pts[0],pts[1])/_ph.startDist)));
+    _ph.z=z; _ph.moved=true; applyPhoto(_ph.img,_ph.px,_ph.py,z);
+  } else if(_ph.mode==='pan' && pts.length===1){
+    const dx=ev.clientX-_ph.x0, dy=ev.clientY-_ph.y0;
+    if(Math.abs(dx)+Math.abs(dy)>3) _ph.moved=true;
+    _ph.px=Math.max(0,Math.min(100,_ph.startPx-(dx/_ph.w)*100));
+    _ph.py=Math.max(0,Math.min(100,_ph.startPy-(dy/_ph.h)*100));
+    applyPhoto(_ph.img,_ph.px,_ph.py,_ph.z);
   }
-  _pan = null;
+}
+function panUp(ev){
+  if(!_ph) return;
+  _ph.pointers.delete(ev.pointerId);
+  if(_ph.pointers.size===1){ const p=[..._ph.pointers.values()][0]; startPan(p.x,p.y); return; }
+  if(_ph.pointers.size>=2){ startPinch(); return; }
+  window.removeEventListener('pointermove', panMove);
+  window.removeEventListener('pointerup', panUp);
+  window.removeEventListener('pointercancel', panUp);
+  if(_ph.moved){ const o=photoObj(_ph.kind,_ph.key); if(o){ o.photoPos={x:_ph.px,y:_ph.py}; o.photoZoom=_ph.z; save(); } }
+  _ph=null;
 }
 
 /* ── page flip animation ── */
@@ -1020,9 +1043,9 @@ function openGoal(i){
 function goalPageHTML(i){
   const g = store.top100[i];
   const date = g.date || todayISO();
-  const gp = g.photoPos||{x:50,y:50};
+  const gp = g.photoPos||{x:50,y:50}, gz = g.photoZoom||1;
   const bigPhoto = g.photo
-    ? `<div class="page-photo"><img src="${g.photo}" style="object-position:${gp.x}% ${gp.y}%" onpointerdown="panStart(event,'goal',${i})"><label class="photo-btn photo-replace"><input type="file" accept="image/*" hidden onchange="onGoalPhotoPick(${i},this)">⟳</label><span class="photo-btn photo-x" onclick="removeGoalPhoto(${i})">×</span><span class="photo-hint">drag to reposition</span></div>`
+    ? `<div class="page-photo"><img src="${g.photo}" style="object-position:${gp.x}% ${gp.y}%;transform:scale(${gz})" onpointerdown="panStart(event,'goal',${i})"><label class="photo-btn photo-replace"><input type="file" accept="image/*" hidden onchange="onGoalPhotoPick(${i},this)">⟳</label><span class="photo-btn photo-x" onclick="removeGoalPhoto(${i})">×</span><span class="photo-hint">drag to move · pinch to zoom</span></div>`
     : '';
   const addBtn = g.photo ? '' : `<label class="photo-slot">+<input type="file" accept="image/*" hidden onchange="onGoalPhotoPick(${i},this)"></label>`;
   return `
