@@ -68,6 +68,25 @@
 
   .shelf-scroll{ padding: 8px 0 40px; }
 
+  /* ── writing streak bar ── */
+  .streak-bar{
+    margin: 4px 16px 22px; padding: 14px 16px;
+    display:flex; align-items:center; gap:14px;
+    border-radius:16px;
+    background: linear-gradient(150deg, rgba(217,180,91,.16), rgba(122,86,56,.14));
+    border:1px solid rgba(217,180,91,.28);
+    box-shadow: 0 8px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .streak-flame{ font-size:30px; line-height:1; filter: drop-shadow(0 2px 4px rgba(0,0,0,.4)); }
+  .streak-main{ flex:1; min-width:0; }
+  .streak-num{ font-family:Georgia,serif; font-size:24px; font-weight:700; color:var(--gold); line-height:1.05; }
+  .streak-num span{ font-size:13px; font-weight:400; color:#e7d5a8; letter-spacing:.3px; }
+  .streak-sub{ font-size:11.5px; color:#c9b48f; opacity:.85; margin-top:3px; }
+  .streak-stats{ display:flex; gap:16px; text-align:center; }
+  .streak-stats div{ display:flex; flex-direction:column; }
+  .streak-stats b{ font-family:Georgia,serif; font-size:18px; color:#f0e2be; }
+  .streak-stats span{ font-size:9.5px; text-transform:uppercase; letter-spacing:.8px; color:#b79a63; }
+
   /* one wooden shelf row */
   .shelf-row-wrap{ padding: 0 16px; margin-bottom: 30px; }
   .books-row{
@@ -536,11 +555,56 @@ function renderShelf(){
 
   // chunk into shelf rows of 2 (matches grid, gives each row a plank)
   const perRow = window.innerWidth>=520 ? 3 : 2;
-  let html='';
+  let html = streakBarHTML();
   for(let i=0;i<books.length;i+=perRow){
     html += `<div class="shelf-row-wrap"><div class="books-row">${books.slice(i,i+perRow).join('')}</div><div class="shelf-plank"></div></div>`;
   }
   wrap.innerHTML = html;
+}
+
+/* ── writing streak: days in a row (across all journals) you added an entry ── */
+function writtenDaysSet(){
+  const s = new Set();
+  store.journals.forEach(j => Object.keys(j.entries||{}).forEach(d => {
+    const e = j.entries[d]; if (e && (e.text?.trim() || e.photo)) s.add(d);
+  }));
+  return s;
+}
+function computeStreak(){
+  const days = writtenDaysSet();
+  const total = days.size;
+  const t = todayISO();
+  // current streak: count back from today (or yesterday if today not written yet)
+  let cur = 0, anchor = days.has(t) ? t : (days.has(addDays(t,-1)) ? addDays(t,-1) : null);
+  if (anchor){ let d = anchor; while (days.has(d)){ cur++; d = addDays(d,-1); } }
+  // best streak ever
+  let best = 0;
+  [...days].sort().forEach(d => {
+    if (days.has(addDays(d,-1))) { /* handled by running count below */ }
+  });
+  // running best
+  const sorted = [...days].sort();
+  let run = 0, prev = null;
+  sorted.forEach(d => { run = (prev && daysBetween(prev,d)===1) ? run+1 : 1; if (run>best) best=run; prev=d; });
+  return { cur, best, total, wroteToday: days.has(t) };
+}
+function streakBarHTML(){
+  const { cur, best, total, wroteToday } = computeStreak();
+  const flame = cur>0 ? '🔥' : '🕯️';
+  const sub = cur>0
+    ? (wroteToday ? 'Keep it going — you wrote today' : 'Write today to keep your streak')
+    : 'Add an entry to start a streak';
+  return `<div class="streak-bar">
+      <div class="streak-flame">${flame}</div>
+      <div class="streak-main">
+        <div class="streak-num">${cur} <span>day${cur===1?'':'s'} streak</span></div>
+        <div class="streak-sub">${sub}</div>
+      </div>
+      <div class="streak-stats">
+        <div><b>${total}</b><span>days written</span></div>
+        <div><b>${best}</b><span>best streak</span></div>
+      </div>
+    </div>`;
 }
 
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -579,12 +643,23 @@ let idx = 0;           // current page index
 let animating = false;
 
 function buildPages(j){
-  // pages = every date with a real entry  ∪  the last 30 days (this "month" is always flippable)
-  const set = new Set();
+  // Pages run from the journal's beginning (day 1) to today, one per day.
+  // Kept forever if written; empty pages older than 30 days fall away.
   const t = todayISO();
-  for(let i=29;i>=0;i--) set.add(addDays(t,-i));
-  Object.keys(j.entries||{}).forEach(d=>{ if(j.entries[d] && (j.entries[d].text?.trim() || j.entries[d].photo)) set.add(d); });
-  return [...set].sort();  // ascending ISO sorts chronologically
+  const written = Object.keys(j.entries||{}).filter(d => j.entries[d] && (j.entries[d].text?.trim() || j.entries[d].photo));
+  let start = j.created || t;
+  written.forEach(d => { if (d < start) start = d; });   // never start after the first entry
+  if (start > t) start = t;
+  const cutoff = addDays(t, -29);                         // last 30 days always flippable
+  const set = new Set();
+  for (let d = start; d <= t; d = addDays(d, 1)) {
+    const e = j.entries && j.entries[d];
+    const hasEntry = e && (e.text?.trim() || e.photo);
+    if (hasEntry || d >= cutoff) set.add(d);              // drop old blank days, keep the rest
+  }
+  written.forEach(d => set.add(d));                       // safety: always include written days
+  set.add(t);                                             // today is always writable
+  return [...set].sort();                                 // ascending ISO = chronological
 }
 
 function openJournal(id){
