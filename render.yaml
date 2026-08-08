@@ -1,0 +1,7 @@
+# Render Blueprint — Chapters (static site, no build step)
+services:
+  - type: web
+    name: chapters
+    runtime: static
+    buildCommand: "echo 'no build step — plain static files'"
+    staticPublishPath: .

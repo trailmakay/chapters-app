@@ -1,0 +1,14 @@
+{
+  "name": "Chapters — Story of My Life",
+  "short_name": "Chapters",
+  "description": "A shelf of leather-bound journals plus your Top 100 life goals. Write a page a day, flip through like a real book.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#241609",
+  "theme_color": "#3a2418",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
