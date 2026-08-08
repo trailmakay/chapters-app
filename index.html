@@ -507,7 +507,9 @@
   </div>
 </div>
 
-<input type="file" id="photoInput" accept="image/*" style="display:none">
+<!-- off-screen (not display:none) so iOS Safari reliably opens the photo picker -->
+<input type="file" id="photoInput" accept="image/*"
+  style="position:fixed; left:-10000px; top:0; width:1px; height:1px; opacity:0; pointer-events:none;">
 
 <script>
 /* ══════════════════════ DATA ══════════════════════ */
