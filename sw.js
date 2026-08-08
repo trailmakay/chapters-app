@@ -1,6 +1,6 @@
 /* Chapters service worker — offline-first app shell.
    Network-first for the shell so updates show when online, cache fallback offline. */
-const CACHE = 'chapters-v4';
+const CACHE = 'chapters-v5';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

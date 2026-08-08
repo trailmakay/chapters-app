@@ -548,12 +548,36 @@ const FONTS = [
 function blank(){
   return { journals:[], top100:Array.from({length:100},()=>({text:'',done:false,reflection:''})) };
 }
-let store = load();
-function load(){
-  try{ const s = JSON.parse(localStorage.getItem(KEY)); if(s&&s.journals) { if(!s.top100) s.top100=blank().top100; return s; } }catch(e){}
-  return blank();
+let store = blank();
+
+/* ── persistence ──
+   Photos can be large, so data lives in IndexedDB (big quota, ~hundreds of MB).
+   localStorage is only read once to migrate any existing data, and used as a
+   last-resort fallback if IndexedDB is unavailable. */
+const DB_NAME='chapters', DB_STORE='kv', DB_KEY='store';
+function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DB_NAME,1);
+  r.onupgradeneeded=()=>r.result.createObjectStore(DB_STORE);
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+function idbGet(k){ return idb().then(db=>new Promise((res,rej)=>{ const q=db.transaction(DB_STORE,'readonly').objectStore(DB_STORE).get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); })); }
+function idbSet(k,v){ return idb().then(db=>new Promise((res,rej)=>{ const t=db.transaction(DB_STORE,'readwrite'); t.objectStore(DB_STORE).put(v,k); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); })); }
+function localLoad(){ try{ const s=JSON.parse(localStorage.getItem(KEY)); if(s&&s.journals) return s; }catch(e){} return null; }
+function normalize(s){ if(!s.top100) s.top100=blank().top100; return s; }
+
+let _saveT=null;
+function save(){ clearTimeout(_saveT); _saveT=setTimeout(flush, 200); }
+function flush(){
+  idbSet(DB_KEY, store).catch(()=>{ try{ localStorage.setItem(KEY, JSON.stringify(store)); }catch(e){} });
 }
-function save(){ localStorage.setItem(KEY, JSON.stringify(store)); }
+window.addEventListener('pagehide', flush);
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') flush(); });
+
+async function boot(){
+  let data=null;
+  try{ data = await idbGet(DB_KEY); }catch(e){}
+  if(!data){ data = localLoad(); if(data){ try{ await idbSet(DB_KEY, data); }catch(e){} } }  // migrate old localStorage data
+  if(data && data.journals) store = normalize(data);
+  renderShelf();
+}
 
 /* date helpers (local, ISO yyyy-mm-dd) */
 function isoOf(d){ const z=new Date(d.getTime()-d.getTimezoneOffset()*60000); return z.toISOString().slice(0,10); }
@@ -785,19 +809,13 @@ function compressImage(file, cb){
   };
   img.src = url;
 }
-function saveGuarded(revert){
-  try { save(); return true; }
-  catch(e){ if(revert) revert(); alert('That photo is too large to save — please try a smaller one.'); return false; }
-}
 function onEntryPhotoPick(iso, input){
   const f=input.files&&input.files[0]; if(!f) return;
   compressImage(f, url=>{
     if(!url){ alert("Sorry, that image couldn't be read."); return; }
     if(!cur.entries) cur.entries={};
     if(!cur.entries[iso]) cur.entries[iso]={text:'',photo:''};
-    const prev = cur.entries[iso].photo;
-    cur.entries[iso].photo = url;
-    if(saveGuarded(()=>{ cur.entries[iso].photo = prev; })) renderPage();
+    cur.entries[iso].photo = url; save(); renderPage();
   });
   input.value='';
 }
@@ -805,9 +823,7 @@ function onGoalPhotoPick(i, input){
   const f=input.files&&input.files[0]; if(!f) return;
   compressImage(f, url=>{
     if(!url){ alert("Sorry, that image couldn't be read."); return; }
-    const prev = store.top100[i].photo;
-    store.top100[i].photo = url;
-    if(saveGuarded(()=>{ store.top100[i].photo = prev; })) renderGoalPage();
+    store.top100[i].photo = url; save(); renderGoalPage();
   });
   input.value='';
 }
@@ -992,7 +1008,7 @@ function showShelf(){ renderShelf(); showView('shelfView'); }
 function showTop100(){ renderTop100(); showView('top100View'); }
 
 /* boot */
-renderShelf();
+boot();
 bindSwipe();
 window.addEventListener('resize', ()=>{ if(document.getElementById('shelfView').classList.contains('active')) renderShelf(); });
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
